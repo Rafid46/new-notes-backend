@@ -1,0 +1,62 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+
+
+model User {
+  id          String    @id @default(uuid())
+  email       String    @unique
+  name        String?
+  avatarUrl   String?
+  password    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  notes Note[]
+}
+
+model Note {
+  id          String   @id @default(uuid())
+  userId      String 
+  parentId    String?
+  title       String   @default("Untitled")
+  content     Json?
+  plainText   String   @default("")
+  labels      String[] @default([])
+  background  String?
+  headerColor String?
+  headerFont  String?
+  boardX      Float?
+  boardY      Float?
+  sortOrder   Int      @default(0)
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  owner       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent      Note?            @relation("NoteChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children    Note[]           @relation("NoteChildren")
+  attachments NoteAttachment[]
+
+  @@index([userId, parentId, updatedAt])
+  @@index([parentId])
+}
+
+model NoteAttachment {
+  id         String   @id @default(uuid())
+  noteId     String
+  fileName   String
+  mimeType   String
+  sizeBytes  BigInt
+  storageKey String
+  createdAt  DateTime @default(now())
+
+  note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  @@index([noteId])
+}
