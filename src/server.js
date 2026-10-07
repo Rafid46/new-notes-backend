@@ -3,6 +3,8 @@ import cors from "cors";
 import { config } from "dotenv";
 import { connectDB, disconnectDB } from "./config/db.js";
 import userRoutes from "./routes/userRoutes.js";
+import labelRoutes from "./routes/labelRoutes.js";
+import noteRoutes from "./routes/noteRoutes.js";
 
 config();
 connectDB();
@@ -18,6 +20,8 @@ app.use(express.json());
 
 // Routes
 app.use("/api/users", userRoutes);
+app.use("/api/labels", labelRoutes);
+app.use("/api/notes", noteRoutes);
 
 app.get("/hello", (req, res) => {
   res.json({ message: "hello world" });
