@@ -2,7 +2,8 @@ import { prisma } from "../config/db.js";
 
 export const createLabel = async (req, res) => {
   try {
-    const { userId, name } = req.body;
+    const { name } = req.body;
+    const userId = req.user.id;
     if (!userId || !name) {
       return res.status(400).json({ success: false, message: "userId and name are required" });
     }
@@ -20,7 +21,7 @@ export const createLabel = async (req, res) => {
 
 export const getLabels = async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = req.user.id;
     const labels = await prisma.label.findMany({
       where: { userId },
       include: { notes: true },

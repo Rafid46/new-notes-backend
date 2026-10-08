@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 
@@ -56,10 +55,8 @@ model NoteAttachment {
   noteId     String
   fileName   String
   mimeType   String
-  sizeBytes  BigInt
   storageKey String
   createdAt  DateTime @default(now())
-
   note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
 
   @@index([noteId])
@@ -68,7 +65,7 @@ model NoteAttachment {
 model Label {
   id        String   @id @default(uuid())
   userId    String
-  name      String
+  name      String 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)

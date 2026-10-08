@@ -14,7 +14,7 @@ const router = express.Router();
 router.use(authMiddleware);
 
 router.post("/create-label", createLabel);
-router.get("/get-labels/:userId", getLabels);
+router.get("/get-labels", getLabels);
 router.get("/get-by-id/:id", getLabelById);
 router.put("/update-label/:id", updateLabel);
 router.delete("/delete-label/:id", deleteLabel);

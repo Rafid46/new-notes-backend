@@ -2,7 +2,8 @@ import { prisma } from "../config/db.js";
 
 export const createNote = async (req, res) => {
   try {
-    const { userId, title, content, plainText, labels, background, headerColor, headerFont, boardX, boardY, sortOrder, parentId, labelId, attachments } = req.body;
+    const { title, content, plainText, labels, background, headerColor, headerFont, boardX, boardY, sortOrder, parentId, labelId, attachments } = req.body;
+    const userId = req.user.id;
     if (!userId) {
       return res.status(400).json({ success: false, message: "userId is required" });
     }
@@ -22,7 +23,7 @@ export const createNote = async (req, res) => {
 
 export const getNotes = async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = req.user.id;
     const notes = await prisma.note.findMany({
       where: { userId },
       include: { attachments: true, label: true }
