@@ -22,12 +22,32 @@ export const createLabel = async (req, res) => {
 export const getLabels = async (req, res) => {
   try {
     const userId = req.user.id;
-    const labels = await prisma.label.findMany({
-      where: { userId },
-      include: { notes: true },
-    });
+    const { keyword, limit, skip } = req.query;
 
-    res.status(200).json({ success: true, labels });
+    const take = limit ? parseInt(limit, 10) : undefined;
+    const skipCount = skip ? parseInt(skip, 10) : undefined;
+
+    const where = {
+      userId,
+      ...(keyword
+        ? {
+            name: { contains: keyword, mode: "insensitive" },
+          }
+        : {}),
+    };
+
+    const [labels, total] = await Promise.all([
+      prisma.label.findMany({
+        where,
+        take,
+        skip: skipCount,
+        orderBy: { createdAt: "desc" },
+        include: { notes: true },
+      }),
+      prisma.label.count({ where }),
+    ]);
+
+    res.status(200).json({ success: true, labels, total });
   } catch (error) {
     console.error("Error fetching labels:", error);
     res.status(500).json({ success: false, message: error.message || "Server error" });
@@ -86,14 +106,41 @@ export const deleteLabel = async (req, res) => {
 
 export const setNoteLabel = async (req, res) => {
   try {
-    const { noteId, labelId } = req.body;
+    const { noteId, labelId, labels } = req.body;
     if (!noteId) {
       return res.status(400).json({ success: false, message: "noteId is required" });
     }
 
+    const existingNote = await prisma.note.findUnique({
+      where: { id: noteId },
+      select: { labels: true, labelId: true },
+    });
+
+    if (!existingNote) {
+      return res.status(404).json({ success: false, message: "Note not found" });
+    }
+
+    let updatedLabels = existingNote.labels || [];
+    let updatedLabelId = existingNote.labelId;
+
+    if (Array.isArray(labels)) {
+      updatedLabels = labels;
+    } else if (labelId) {
+      const labelRecord = await prisma.label.findUnique({ where: { id: labelId } });
+      if (labelRecord && !updatedLabels.includes(labelRecord.name)) {
+        updatedLabels = [...updatedLabels, labelRecord.name];
+      }
+      updatedLabelId = labelId;
+    } else if (labelId === null) {
+      updatedLabelId = null;
+    }
+
     const note = await prisma.note.update({
       where: { id: noteId },
-      data: { labelId: labelId || null },
+      data: {
+        labels: updatedLabels,
+        labelId: updatedLabelId,
+      },
       include: { label: true },
     });
 

@@ -6,7 +6,8 @@ datasource db {
   provider = "postgresql"
 }
 
-
+// npx prisma migrate dev --name added_names
+// npx prisma generate
 
 
 model User {
@@ -61,6 +62,7 @@ model NoteAttachment {
 
   @@index([noteId])
 }
+// 
 
 model Label {
   id        String   @id @default(uuid())
