@@ -23,6 +23,10 @@ app.use("/api/users", userRoutes);
 app.use("/api/labels", labelRoutes);
 app.use("/api/notes", noteRoutes);
 
+app.get("/", (req, res) => {
+  res.json({ status: "ok" });
+});
+
 app.get("/hi", (req, res) => {
   res.json({ status: "ok" });
 });
