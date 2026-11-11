@@ -14,12 +14,19 @@ export const createNote = async (req, res) => {
       : category
       ? [category]
       : [];
+    const formattedAttachments = Array.isArray(attachments)
+      ? attachments.map((att) => ({
+          fileName: att.fileName || att.name || "attachment",
+          mimeType: att.mimeType || att.type || "application/octet-stream",
+          storageKey: att.storageKey || att.url || "",
+        }))
+      : undefined;
     const note = await prisma.note.create({
       data: {
         userId, title, content, plainText,
         labels: noteLabels,
         background, headerColor, headerFont, boardX, boardY, sortOrder, parentId, labelId,
-        attachments: attachments ? { create: attachments } : undefined
+        attachments: formattedAttachments && formattedAttachments.length > 0 ? { create: formattedAttachments } : undefined
       },
       include: { attachments: true, label: true, children: true }
     });
@@ -90,7 +97,7 @@ export const getNoteById = async (req, res) => {
 export const updateNote = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, content, plainText, labels, category, background, headerColor, headerFont, boardX, boardY, sortOrder, parentId, labelId } = req.body;
+    const { title, content, plainText, labels, category, background, headerColor, headerFont, boardX, boardY, sortOrder, parentId, labelId, attachments } = req.body;
     const noteLabels = Array.isArray(labels)
       ? labels
       : labels !== undefined
@@ -98,12 +105,25 @@ export const updateNote = async (req, res) => {
       : category !== undefined
       ? [category]
       : undefined;
+    const formattedAttachments = Array.isArray(attachments)
+      ? attachments.map((att) => ({
+          fileName: att.fileName || att.name || "attachment",
+          mimeType: att.mimeType || att.type || "application/octet-stream",
+          storageKey: att.storageKey || att.url || "",
+        }))
+      : undefined;
+    if (formattedAttachments !== undefined) {
+      await prisma.noteAttachment.deleteMany({ where: { noteId: id } });
+    }
     const note = await prisma.note.update({
       where: { id },
       data: {
         title, content, plainText,
         labels: noteLabels,
-        background, headerColor, headerFont, boardX, boardY, sortOrder, parentId, labelId
+        background, headerColor, headerFont, boardX, boardY, sortOrder, parentId, labelId,
+        ...(formattedAttachments && formattedAttachments.length > 0
+          ? { attachments: { create: formattedAttachments } }
+          : {})
       },
       include: { attachments: true, label: true, children: true }
     });
