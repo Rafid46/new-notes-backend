@@ -8,7 +8,7 @@ export const generateNoteFromContent = async ({ text, file, command }) => {
   }
 
   const ai = new GoogleGenAI({ apiKey });
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 
   const contents = [];
   let extractedText = text ? String(text) : "";
