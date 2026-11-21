@@ -1,31 +1,62 @@
-import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 import mammoth from "mammoth";
+import { extractText } from "unpdf";
 
-export const generateNoteFromContent = async ({ text, file, command }) => {
-  const apiKey = process.env.GEMINI_API_KEY;
+let cachedAiClient;
+
+const getAiClient = () => {
+  const baseURL = process.env.OPENAI_BASE_URL?.trim() || undefined;
+  const apiKey = process.env.OPENAI_API_KEY?.trim() || (baseURL ? "ollama" : "");
+
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY is not configured");
+    throw new Error("OPENAI_API_KEY is not configured");
   }
 
-  const ai = new GoogleGenAI({ apiKey });
-  const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+  if (!cachedAiClient) {
+    cachedAiClient = new OpenAI({
+      apiKey,
+      ...(baseURL ? { baseURL } : {}),
+    });
+  }
+  return cachedAiClient;
+};
 
-  const contents = [];
+export const generateNoteFromContent = async ({ text, file, command }) => {
+  const openai = getAiClient();
+  const baseURL = process.env.OPENAI_BASE_URL?.trim();
+  const model =
+    process.env.OPENAI_MODEL?.trim() || (baseURL ? "llama3.2" : "gpt-4.1-mini");
+
   let extractedText = text ? String(text) : "";
+  let imageUrl = null;
 
   if (file) {
+    const isPdf =
+      file.mimetype === "application/pdf" ||
+      file.originalname?.toLowerCase().endsWith(".pdf");
+
     const isDocx =
       file.mimetype ===
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-      file.originalname?.endsWith(".docx");
+      file.originalname?.toLowerCase().endsWith(".docx");
 
     const isTextFile =
       file.mimetype?.startsWith("text/") ||
-      file.originalname?.endsWith(".txt") ||
-      file.originalname?.endsWith(".md") ||
-      file.originalname?.endsWith(".csv");
+      file.originalname?.toLowerCase().endsWith(".txt") ||
+      file.originalname?.toLowerCase().endsWith(".md") ||
+      file.originalname?.toLowerCase().endsWith(".csv") ||
+      file.originalname?.toLowerCase().endsWith(".json");
 
-    if (isDocx) {
+    const isImage = file.mimetype?.startsWith("image/");
+
+    if (isPdf) {
+      const pdfResult = await extractText(new Uint8Array(file.buffer), {
+        mergePages: true,
+      });
+      extractedText = extractedText
+        ? `${extractedText}\n\n${pdfResult.text}`
+        : pdfResult.text;
+    } else if (isDocx) {
       const docxResult = await mammoth.extractRawText({ buffer: file.buffer });
       extractedText = extractedText
         ? `${extractedText}\n\n${docxResult.value}`
@@ -35,47 +66,64 @@ export const generateNoteFromContent = async ({ text, file, command }) => {
       extractedText = extractedText
         ? `${extractedText}\n\n${fileText}`
         : fileText;
+    } else if (isImage) {
+      imageUrl = `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
     } else {
-      contents.push({
-        inlineData: {
-          mimeType: file.mimetype,
-          data: file.buffer.toString("base64"),
-        },
-      });
+      throw new Error(`Unsupported file type: ${file.mimetype}`);
     }
   }
 
-  const userInstruction = command?.trim() || "Convert the content into clear, well-structured, and comprehensive notes.";
+  const hasFile = Boolean(file);
+  const userInstruction = command?.trim() || "";
 
-  const prompt = `You are an expert note-taking assistant.
-User Instruction: ${userInstruction}
+  const prompt = `${userInstruction ? `User Instruction: ${userInstruction}\n\n` : ""}${extractedText ? `User Input:\n${extractedText}\n\n` : ""}Decide if this is casual conversation/general Q&A ("chat") or content/request to create structured notes ("note").
+${hasFile ? 'A file was uploaded, so always respond with "type": "note".' : 'Use "chat" for greetings, small talk, or simple direct questions when the user is NOT asking to create, summarize, or format notes. Use "note" when the user provides study/meeting/article content, large text, or asks to create/summarize/convert notes.'}
 
-${extractedText ? `Content:\n${extractedText}\n` : ""}
+Output ONLY a valid JSON object matching ONE of these two formats:
 
-Analyze the provided input and transform it into high-quality notes following the user's instructions.
-Output ONLY a valid JSON object with the following structure:
+For casual chat:
 {
+  "type": "chat",
+  "reply": "A natural, helpful conversational reply"
+}
+
+For notes:
+{
+  "type": "note",
   "title": "A concise and informative note title",
   "plainText": "The complete formatted notes in markdown with headings, bullet points, and key details",
-  "content": {
-    "summary": "Brief summary",
-    "notes": "Full formatted notes",
-    "keyTakeaways": ["point 1", "point 2"]
-  },
+  "summary": "Brief summary",
+  "keyTakeaways": ["point 1", "point 2"],
   "labels": ["label1", "label2"]
 }`;
 
-  contents.push(prompt);
+  const userMessageContent = imageUrl
+    ? [
+        { type: "image_url", image_url: { url: imageUrl } },
+        { type: "text", text: prompt },
+      ]
+    : prompt;
 
-  const response = await ai.models.generateContent({
+  const completion = await openai.chat.completions.create({
     model,
-    contents,
-    config: {
-      responseMimeType: "application/json",
-    },
+    messages: [
+      {
+        role: "system",
+        content:
+          "You are a helpful AI note assistant. Respond naturally to casual chat with type 'chat', and generate structured notes with type 'note'. Always respond with valid JSON matching the requested schema.",
+      },
+      {
+        role: "user",
+        content: userMessageContent,
+      },
+    ],
+    response_format: { type: "json_object" },
   });
 
-  const responseText = response.text || "";
+  const responseText = completion.choices?.[0]?.message?.content;
+  if (!responseText) {
+    throw new Error("AI service returned an empty response");
+  }
 
   let parsed;
   try {
@@ -85,18 +133,36 @@ Output ONLY a valid JSON object with the following structure:
     parsed = jsonMatch
       ? JSON.parse(jsonMatch[0])
       : {
+          type: hasFile ? "note" : "chat",
+          reply: responseText,
           title: "AI Generated Note",
           plainText: responseText,
-          content: { text: responseText },
+          summary: "",
+          keyTakeaways: [],
           labels: [],
         };
   }
 
+  if (!hasFile && parsed.type === "chat") {
+    return {
+      type: "chat",
+      reply: parsed.reply || parsed.plainText || "Hello! How can I help you?",
+    };
+  }
+
+  const plainText = parsed.plainText || "";
+
   return {
+    type: "note",
     title: parsed.title || "AI Generated Note",
-    plainText: parsed.plainText || "",
-    content: parsed.content || { text: parsed.plainText || "" },
+    plainText,
+    content: {
+      summary: parsed.summary || "",
+      notes: plainText,
+      keyTakeaways: Array.isArray(parsed.keyTakeaways)
+        ? parsed.keyTakeaways
+        : [],
+    },
     labels: Array.isArray(parsed.labels) ? parsed.labels : [],
   };
 };
-

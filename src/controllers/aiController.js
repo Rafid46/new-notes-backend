@@ -33,18 +33,37 @@ export const convertAndCreateNote = async (req, res) => {
       });
     }
 
-    const generated = await generateNoteFromContent({
-      text,
-      file,
-      command,
-    });
-
     const shouldSave = saveToDb === true || saveToDb === "true";
 
-    let uploadResult = null;
-    if (file && shouldSave) {
-      uploadResult = await uploadToCloudinary(file.buffer, {
-        folder: "notes_attachments",
+    const [generated, uploadResult] = await Promise.all([
+      generateNoteFromContent({
+        text,
+        file,
+        command,
+      }),
+      file && shouldSave
+        ? uploadToCloudinary(file.buffer, {
+            folder: "notes_attachments",
+          })
+        : Promise.resolve(null),
+    ]);
+
+    if (generated.type === "chat") {
+      return res.status(200).json({
+        success: true,
+        type: "chat",
+        reply: generated.reply,
+        note: {
+          title: "",
+          plainText: generated.reply,
+          content: {
+            summary: "",
+            notes: generated.reply,
+            keyTakeaways: [],
+          },
+          labels: [],
+        },
+        attachment: null,
       });
     }
 
@@ -63,8 +82,11 @@ export const convertAndCreateNote = async (req, res) => {
     if (!shouldSave) {
       return res.status(200).json({
         success: true,
+        type: "note",
         note: {
-          ...generated,
+          title: generated.title,
+          plainText: generated.plainText,
+          content: generated.content,
           labels: finalLabels,
         },
         attachment: uploadResult
@@ -109,12 +131,22 @@ export const convertAndCreateNote = async (req, res) => {
       },
     });
 
-    res.status(201).json({ success: true, note });
+    res.status(201).json({ success: true, type: "note", note });
   } catch (error) {
     console.error(error);
+    let message = error.message || "Failed to process AI conversion";
+    try {
+      const parsed = JSON.parse(error.message);
+      if (parsed?.error?.message) {
+        message =
+          parsed.error.code === 503
+            ? "The AI service is currently experiencing high demand. Please try again in a moment."
+            : parsed.error.message;
+      }
+    } catch {}
     res.status(500).json({
       success: false,
-      message: error.message || "Failed to process AI conversion",
+      message,
     });
   }
 };
