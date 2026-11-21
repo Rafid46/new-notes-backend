@@ -37,10 +37,12 @@ model Note {
   headerFont  String?
   boardX      Float?
   boardY      Float?
-  sortOrder   Int      @default(0)
-  version     Int      @default(1)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  sortOrder   Int       @default(0)
+  version     Int       @default(1)
+  isArchived  Boolean   @default(false)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   owner       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   parent      Note?            @relation("NoteChildren", fields: [parentId], references: [id], onDelete: Cascade)
   children    Note[]           @relation("NoteChildren")
@@ -48,6 +50,7 @@ model Note {
   label       Label?           @relation(fields: [labelId], references: [id], onDelete: SetNull)
 
   @@index([userId, parentId, updatedAt])
+  @@index([userId, isArchived, deletedAt])
   @@index([parentId])
   @@index([labelId])
 }

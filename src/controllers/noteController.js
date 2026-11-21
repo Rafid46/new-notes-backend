@@ -40,13 +40,22 @@ export const createNote = async (req, res) => {
 export const getNotes = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { keyword, limit, skip } = req.query;
+    const { keyword, limit, skip, archived, trashed } = req.query;
 
     const take = limit ? parseInt(limit, 10) : undefined;
     const skipCount = skip ? parseInt(skip, 10) : undefined;
 
+    const isTrashed = trashed === "true";
+    const isArchived = archived === "true";
+
     const where = {
       userId,
+      ...(isTrashed
+        ? { deletedAt: { not: null } }
+        : {
+            deletedAt: null,
+            isArchived,
+          }),
       ...(keyword
         ? {
             OR: [
@@ -64,7 +73,7 @@ export const getNotes = async (req, res) => {
         where,
         take,
         skip: skipCount,
-        orderBy: { updatedAt: "desc" },
+        orderBy: isTrashed ? { deletedAt: "desc" } : { updatedAt: "desc" },
         include: { attachments: true, label: true },
       }),
       prisma.note.count({ where }),
@@ -97,7 +106,7 @@ export const getNoteById = async (req, res) => {
 export const updateNote = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, content, plainText, labels, category, background, headerColor, headerFont, boardX, boardY, sortOrder, parentId, labelId, attachments } = req.body;
+    const { title, content, plainText, labels, category, background, headerColor, headerFont, boardX, boardY, sortOrder, parentId, labelId, attachments, isArchived } = req.body;
     const noteLabels = Array.isArray(labels)
       ? labels
       : labels !== undefined
@@ -121,6 +130,7 @@ export const updateNote = async (req, res) => {
         title, content, plainText,
         labels: noteLabels,
         background, headerColor, headerFont, boardX, boardY, sortOrder, parentId, labelId,
+        isArchived: typeof isArchived === "boolean" ? isArchived : undefined,
         ...(formattedAttachments && formattedAttachments.length > 0
           ? { attachments: { create: formattedAttachments } }
           : {})
@@ -134,11 +144,109 @@ export const updateNote = async (req, res) => {
   }
 };
 
+export const archiveNote = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const existing = await prisma.note.findFirst({ where: { id, userId } });
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Note not found" });
+    }
+    const nextArchived =
+      typeof req.body?.isArchived === "boolean"
+        ? req.body.isArchived
+        : !existing.isArchived;
+    const note = await prisma.note.update({
+      where: { id },
+      data: {
+        isArchived: nextArchived,
+        deletedAt: null,
+      },
+      include: { attachments: true, label: true, children: true },
+    });
+    res.status(200).json({ success: true, note });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
 export const deleteNote = async (req, res) => {
   try {
     const { id } = req.params;
-    await prisma.note.delete({ where: { id } });
-    res.status(200).json({ success: true, message: "Note deleted" });
+    const userId = req.user.id;
+    const existing = await prisma.note.findFirst({ where: { id, userId } });
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Note not found" });
+    }
+    const note = await prisma.note.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        isArchived: false,
+      },
+      include: { attachments: true, label: true, children: true },
+    });
+    res.status(200).json({ success: true, message: "Note moved to bin", note });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+export const restoreNote = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const existing = await prisma.note.findFirst({ where: { id, userId } });
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Note not found" });
+    }
+    const note = await prisma.note.update({
+      where: { id },
+      data: {
+        deletedAt: null,
+      },
+      include: { attachments: true, label: true, children: true },
+    });
+    res.status(200).json({ success: true, note });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+export const permanentDeleteNote = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const result = await prisma.note.deleteMany({
+      where: { id, userId },
+    });
+    if (result.count === 0) {
+      return res.status(404).json({ success: false, message: "Note not found" });
+    }
+    res.status(200).json({ success: true, message: "Note permanently deleted" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+export const emptyBin = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const result = await prisma.note.deleteMany({
+      where: {
+        userId,
+        deletedAt: { not: null },
+      },
+    });
+    res.status(200).json({
+      success: true,
+      message: "Bin emptied",
+      deletedCount: result.count,
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: "Server error" });
