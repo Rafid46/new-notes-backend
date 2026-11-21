@@ -6,7 +6,8 @@ let cachedAiClient;
 
 const getAiClient = () => {
   const baseURL = process.env.OPENAI_BASE_URL?.trim() || undefined;
-  const apiKey = process.env.OPENAI_API_KEY?.trim() || (baseURL ? "ollama" : "");
+  const apiKey =
+    process.env.OPENAI_API_KEY?.trim() || (baseURL ? "ollama" : "");
 
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is not configured");
@@ -24,8 +25,7 @@ const getAiClient = () => {
 export const generateNoteFromContent = async ({ text, file, command }) => {
   const openai = getAiClient();
   const baseURL = process.env.OPENAI_BASE_URL?.trim();
-  const model =
-    process.env.OPENAI_MODEL?.trim() || (baseURL ? "llama3.2" : "gpt-4.1-mini");
+  const model = process.env.OPENAI_MODEL;
 
   let extractedText = text ? String(text) : "";
   let imageUrl = null;
@@ -135,7 +135,7 @@ For notes:
       : {
           type: hasFile ? "note" : "chat",
           reply: responseText,
-          title: "AI Generated Note",
+          title: "",
           plainText: responseText,
           summary: "",
           keyTakeaways: [],
